@@ -1,49 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { s3Service } from '../services/api';
-import { toast } from 'react-toastify';
 import { 
+  RegionSelector, 
   LoadingSpinner, 
   ErrorAlert, 
-  ResourceCard, 
-  SearchFilter 
+  SuccessAlert,
+  SearchFilter,
+  Modal,
+  FormField,
+  Tag,
+  EmptyState
 } from '../components/UIComponents';
 
 const S3Page = () => {
   const [buckets, setBuckets] = useState([]);
   const [filteredBuckets, setFilteredBuckets] = useState([]);
+  const [regions, setRegions] = useState(['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1']);
+  const [selectedRegion, setSelectedRegion] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRegion, setSelectedRegion] = useState(null);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [actionLoading, setActionLoading] = useState({});
   const [createForm, setCreateForm] = useState({
     bucket_name: '',
-    region: 'us-east-1'
+    region: 'us-east-1',
+    public_access: false,
+    versioning: false,
+    encryption: true
   });
-
-  const regions = [
-    'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
-    'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1',
-    'ap-south-1', 'ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2'
-  ];
 
   useEffect(() => {
     fetchBuckets();
-  }, []);
+  }, [selectedRegion]);
 
   useEffect(() => {
     filterBuckets();
-  }, [buckets, searchTerm, selectedRegion]);
+  }, [buckets, searchTerm]);
 
   const fetchBuckets = async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await s3Service.listBuckets();
-      setBuckets(response.data);
-    } catch (error) {
-      setError('Failed to fetch S3 buckets. Please check your AWS credentials.');
-      console.error('S3 fetch error:', error);
+      let bucketData = response.data || [];
+      
+      // Filter by region if not 'all'
+      if (selectedRegion !== 'all') {
+        bucketData = bucketData.filter(bucket => bucket.region === selectedRegion);
+      }
+      
+      setBuckets(bucketData);
+    } catch (err) {
+      setError('Failed to fetch S3 buckets');
+      console.error('S3 fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -51,248 +62,328 @@ const S3Page = () => {
 
   const filterBuckets = () => {
     let filtered = buckets;
-
-    // Filter by region
-    if (selectedRegion) {
-      filtered = filtered.filter(bucket => bucket.region === selectedRegion);
-    }
-
-    // Filter by search term
+    
     if (searchTerm) {
-      filtered = filtered.filter(bucket =>
-        bucket.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bucket.region.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = buckets.filter(bucket =>
+        bucket.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bucket.region?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-
+    
     setFilteredBuckets(filtered);
   };
 
   const handleCreateBucket = async (e) => {
     e.preventDefault();
     try {
-      await s3Service.createBucket(createForm);
-      toast.success('S3 bucket created successfully');
+      setActionLoading(prev => ({ ...prev, create: true }));
+      setError(null);
+      
+      const response = await s3Service.createBucket(createForm);
+      setSuccess(`S3 bucket "${createForm.bucket_name}" created successfully!`);
       setShowCreateForm(false);
       setCreateForm({
         bucket_name: '',
-        region: 'us-east-1'
+        region: 'us-east-1',
+        public_access: false,
+        versioning: false,
+        encryption: true
       });
-      fetchBuckets();
-    } catch (error) {
-      toast.error('Failed to create S3 bucket');
-      console.error('S3 create error:', error);
+      
+      // Refresh buckets list
+      setTimeout(() => fetchBuckets(), 2000);
+    } catch (err) {
+      setError('Failed to create S3 bucket');
+      console.error('Create bucket error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, create: false }));
     }
   };
 
   const handleDeleteBucket = async (bucketName) => {
-    if (window.confirm(`Are you sure you want to delete bucket "${bucketName}"? This will delete all objects in the bucket.`)) {
-      try {
-        await s3Service.deleteBucket(bucketName);
-        toast.success('S3 bucket deleted successfully');
-        fetchBuckets();
-      } catch (error) {
-        toast.error('Failed to delete S3 bucket');
-        console.error('S3 delete error:', error);
-      }
+    if (!window.confirm(`Are you sure you want to delete bucket "${bucketName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(prev => ({ ...prev, [bucketName]: true }));
+      setError(null);
+      
+      await s3Service.deleteBucket(bucketName);
+      setSuccess(`Bucket "${bucketName}" deletion initiated`);
+      
+      // Refresh buckets list
+      setTimeout(() => fetchBuckets(), 2000);
+    } catch (err) {
+      setError(`Failed to delete bucket "${bucketName}"`);
+      console.error('Delete bucket error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [bucketName]: false }));
     }
   };
 
-  const getBucketsByRegion = () => {
-    return buckets.reduce((acc, bucket) => {
-      const region = bucket.region || 'Unknown';
-      acc[region] = (acc[region] || 0) + 1;
-      return acc;
-    }, {});
+  const getBucketStats = () => {
+    const total = buckets.length;
+    const public_buckets = buckets.filter(b => b.public_access).length;
+    const encrypted = buckets.filter(b => b.encryption_enabled).length;
+    const versioned = buckets.filter(b => b.versioning_enabled).length;
+    
+    return { total, public_buckets, encrypted, versioned };
   };
 
-  if (loading && buckets.length === 0) {
-    return <LoadingSpinner message="Loading S3 buckets..." />;
+  const formatSize = (bytes) => {
+    if (!bytes) return '0 B';
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const stats = getBucketStats();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-60vh">
+        <div className="glass-card text-center">
+          <LoadingSpinner size="lg" />
+          <p className="text-white mt-4 text-lg">Loading S3 buckets...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">🪣 S3 Buckets</h1>
-        <p className="page-description">Manage your S3 storage buckets across all regions</p>
-        
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowCreateForm(!showCreateForm)}
-          >
-            {showCreateForm ? '❌ Cancel' : '➕ Create Bucket'}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={fetchBuckets}
-            disabled={loading}
-          >
-            🔄 Refresh
-          </button>
+    <div className="fade-in">
+      {/* Header */}
+      <div className="mb-8 text-center">
+        <h1 className="title">🪣 S3 Buckets</h1>
+        <p className="subtitle">Store and manage your files in the cloud</p>
+      </div>
+
+      {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
+      {success && <SuccessAlert message={success} onClose={() => setSuccess(null)} />}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">📊</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Total Buckets</h3>
+          <div className="text-4xl font-bold text-white mb-3 text-shadow">{stats.total}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">🔒</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Encrypted</h3>
+          <div className="text-4xl font-bold text-green-400 mb-3 text-shadow">{stats.encrypted}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">📝</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Versioned</h3>
+          <div className="text-4xl font-bold text-blue-400 mb-3 text-shadow">{stats.versioned}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">🌐</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Public</h3>
+          <div className="text-4xl font-bold text-yellow-400 mb-3 text-shadow">{stats.public_buckets}</div>
         </div>
       </div>
 
-      {error && <ErrorAlert message={error} onDismiss={() => setError(null)} />}
-
-      <div className="region-selector">
-        <label>Filter by Region:</label>
-        <select
-          className="region-select"
-          value={selectedRegion || 'all'}
-          onChange={(e) => setSelectedRegion(e.target.value === 'all' ? null : e.target.value)}
-        >
-          <option value="all">All Regions</option>
-          {regions.map(region => (
-            <option key={region} value={region}>{region}</option>
-          ))}
-        </select>
-      </div>
-
-      <SearchFilter
-        value={searchTerm}
-        onChange={setSearchTerm}
-        placeholder="Search buckets by name or region..."
-      />
-
-      {!selectedRegion && buckets.length > 0 && (
-        <div className="create-form" style={{ marginBottom: '1.5rem' }}>
-          <h3>📊 Buckets by Region</h3>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '1rem',
-            textAlign: 'left'
-          }}>
-            {Object.entries(getBucketsByRegion())
-              .sort(([,a], [,b]) => b - a)
-              .map(([region, count]) => (
-                <div 
-                  key={region}
-                  style={{
-                    background: 'white',
-                    padding: '1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #e1e5e9',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onClick={() => setSelectedRegion(region)}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = 'translateY(-2px)';
-                    e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'translateY(0)';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ fontWeight: '600', color: '#232f3e' }}>{region}</div>
-                  <div style={{ fontSize: '0.875rem', color: '#666' }}>{count} buckets</div>
-                </div>
-              ))
-            }
+      {/* Controls */}
+      <div className="glass-card mb-8">
+        <div className="controls-row">
+          <div className="controls-inputs">
+            <RegionSelector
+              value={selectedRegion}
+              onChange={setSelectedRegion}
+              regions={['all', ...regions]}
+              className="flex-1"
+            />
+            <SearchFilter
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search buckets..."
+              className="flex-1"
+            />
           </div>
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="btn btn-primary whitespace-nowrap"
+          >
+            🪣 Create Bucket
+          </button>
         </div>
-      )}
+      </div>
 
-      {showCreateForm && (
-        <div className="create-form">
-          <h3>🚀 Create New S3 Bucket</h3>
-          <form onSubmit={handleCreateBucket}>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Bucket Name</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={createForm.bucket_name}
-                  onChange={(e) => setCreateForm({...createForm, bucket_name: e.target.value})}
-                  placeholder="my-unique-bucket-name"
-                  required
-                />
-                <small>Bucket names must be globally unique and follow S3 naming rules</small>
+      {/* Buckets Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredBuckets.length > 0 ? (
+          filteredBuckets.map((bucket) => (
+            <div key={bucket.name} className="glass-card-small">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-white text-shadow truncate" title={bucket.name}>
+                  {bucket.name}
+                </h3>
+                <div className="flex gap-2">
+                  {bucket.public_access && (
+                    <Tag variant="warning">Public</Tag>
+                  )}
+                  {bucket.encryption_enabled && (
+                    <Tag variant="success">🔒</Tag>
+                  )}
+                </div>
               </div>
-              <div className="form-group">
-                <label>Region</label>
-                <select
-                  className="form-control"
-                  value={createForm.region}
-                  onChange={(e) => setCreateForm({...createForm, region: e.target.value})}
+              
+              <div className="space-y-3 mb-6">
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Region:</span>
+                  <span className="font-medium text-white">{bucket.region}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Created:</span>
+                  <span className="font-medium text-white text-sm">
+                    {bucket.creation_date ? new Date(bucket.creation_date).toLocaleDateString() : 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Objects:</span>
+                  <span className="font-medium text-white">{bucket.object_count || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Size:</span>
+                  <span className="font-medium text-white">{formatSize(bucket.size)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Versioning:</span>
+                  <span className={`font-medium ${bucket.versioning_enabled ? 'text-green-400' : 'text-gray-400'}`}>
+                    {bucket.versioning_enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.open(`https://s3.console.aws.amazon.com/s3/buckets/${bucket.name}`, '_blank')}
+                  className="btn btn-secondary flex-1 text-sm"
                 >
-                  {regions.map(region => (
-                    <option key={region} value={region}>{region}</option>
-                  ))}
-                </select>
+                  🔗 Open Console
+                </button>
+                <button
+                  onClick={() => handleDeleteBucket(bucket.name)}
+                  disabled={actionLoading[bucket.name]}
+                  className="btn btn-danger text-sm"
+                >
+                  {actionLoading[bucket.name] ? <LoadingSpinner size="sm" /> : '🗑️'}
+                </button>
               </div>
             </div>
-            <button type="submit" className="btn btn-success">
-              🚀 Create Bucket
-            </button>
-          </form>
-        </div>
-      )}
-
-      {loading && <LoadingSpinner message="Fetching buckets..." />}
-
-      <div className="resource-grid">
-        {filteredBuckets.map((bucket) => (
-          <ResourceCard
-            key={bucket.name}
-            title={bucket.name}
-            region={!selectedRegion ? bucket.region : null}
-            actions={[
-              <button
-                key="console"
-                className="btn btn-primary"
-                onClick={() => window.open(`https://s3.console.aws.amazon.com/s3/buckets/${bucket.name}`, '_blank')}
-              >
-                🌐 View in Console
-              </button>,
-              <button
-                key="delete"
-                className="btn btn-danger"
-                onClick={() => handleDeleteBucket(bucket.name)}
-              >
-                🗑️ Delete
-              </button>
-            ]}
-          >
-            {!selectedRegion && bucket.region && (
-              <p><strong>Region:</strong> 
-                <span className="region-badge" style={{
-                  background: '#e3f2fd',
-                  color: '#1976d2',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '12px',
-                  fontSize: '0.75rem',
-                  fontWeight: '500',
-                  marginLeft: '0.5rem'
-                }}>
-                  {bucket.region}
-                </span>
-              </p>
-            )}
-            {bucket.creation_date && (
-              <p><strong>Created:</strong> {new Date(bucket.creation_date).toLocaleString()}</p>
-            )}
-          </ResourceCard>
-        ))}
+          ))
+        ) : (
+          <div className="col-span-full">
+            <EmptyState
+              title="No S3 Buckets Found"
+              description={searchTerm ? 
+                `No buckets match your search "${searchTerm}". Try adjusting your search terms.` :
+                "You don't have any S3 buckets yet. Create your first bucket to start storing files!"
+              }
+              icon="🪣"
+              action={
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="btn btn-primary"
+                >
+                  🪣 Create Your First Bucket
+                </button>
+              }
+            />
+          </div>
+        )}
       </div>
 
-      {!loading && filteredBuckets.length === 0 && (
-        <div className="text-center" style={{ padding: '3rem' }}>
-          <h3>No S3 buckets found</h3>
-          <p>
-            {searchTerm
-              ? `No buckets match "${searchTerm}"`
-              : selectedRegion
-              ? `No buckets in ${selectedRegion}`
-              : 'No buckets in any region'
-            }
-          </p>
-        </div>
-      )}
+      {/* Create Bucket Modal */}
+      <Modal
+        isOpen={showCreateForm}
+        onClose={() => setShowCreateForm(false)}
+        title="🪣 Create New S3 Bucket"
+      >
+        <form onSubmit={handleCreateBucket} className="space-y-6">
+          <FormField label="Bucket Name">
+            <input
+              type="text"
+              className="input"
+              placeholder="my-unique-bucket-name"
+              value={createForm.bucket_name}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, bucket_name: e.target.value.toLowerCase() }))}
+              required
+              pattern="[a-z0-9.-]+"
+              title="Bucket names must be lowercase and contain only letters, numbers, dots, and hyphens"
+            />
+            <p className="text-white opacity-70 text-sm mt-1">
+              Bucket names must be globally unique and follow AWS naming rules
+            </p>
+          </FormField>
+
+          <FormField label="Region">
+            <select
+              className="select"
+              value={createForm.region}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, region: e.target.value }))}
+            >
+              {regions.map(region => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Security Settings">
+            <div className="space-y-4">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={createForm.encryption}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, encryption: e.target.checked }))}
+                  className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-white">Enable server-side encryption (recommended)</span>
+              </label>
+              
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={createForm.versioning}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, versioning: e.target.checked }))}
+                  className="rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-2"
+                />
+                <span className="text-white">Enable versioning</span>
+              </label>
+              
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={createForm.public_access}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, public_access: e.target.checked }))}
+                  className="rounded border-gray-600 bg-gray-700 text-yellow-500 focus:ring-yellow-500 focus:ring-2"
+                />
+                <span className="text-white">Allow public access (⚠️ use with caution)</span>
+              </label>
+            </div>
+          </FormField>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowCreateForm(false)}
+              className="btn btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={actionLoading.create}
+              className="btn btn-primary flex-1"
+            >
+              {actionLoading.create ? <LoadingSpinner size="sm" /> : '🪣 Create Bucket'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
