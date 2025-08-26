@@ -1,35 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { ec2Service } from '../services/api';
-import { toast } from 'react-toastify';
 import { 
   RegionSelector, 
   LoadingSpinner, 
   ErrorAlert, 
+  SuccessAlert,
   ResourceCard, 
   SearchFilter,
-  StatusBadge
+  Modal,
+  FormField,
+  Tag,
+  EmptyState
 } from '../components/UIComponents';
 
 const EC2Page = () => {
   const [instances, setInstances] = useState([]);
   const [filteredInstances, setFilteredInstances] = useState([]);
-  const [regions, setRegions] = useState([]);
-  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [regions, setRegions] = useState(['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1']);
+  const [selectedRegion, setSelectedRegion] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [actionLoading, setActionLoading] = useState({});
   const [createForm, setCreateForm] = useState({
-    instance_type: 't2.micro',
+    instance_type: 't3.micro',
     ami_id: 'ami-0c02fb55956c7d316',
     key_name: '',
-    security_groups: [],
-    tags: {},
+    security_groups: ['default'],
+    tags: { Name: '', Environment: 'development' },
     region: 'us-east-1'
   });
 
   useEffect(() => {
-    fetchRegions();
     fetchInstances();
   }, [selectedRegion]);
 
@@ -37,358 +41,383 @@ const EC2Page = () => {
     filterInstances();
   }, [instances, searchTerm]);
 
-  const fetchRegions = async () => {
-    try {
-      const response = await ec2Service.getRegions();
-      setRegions(response.data);
-    } catch (error) {
-      console.error('Failed to fetch regions:', error);
-    }
-  };
-
   const fetchInstances = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await ec2Service.listInstances(selectedRegion);
-      setInstances(response.data);
-    } catch (error) {
-      setError('Failed to fetch EC2 instances. Please check your AWS credentials.');
-      console.error('EC2 fetch error:', error);
+      const response = await ec2Service.listInstances();
+      let instanceData = response.data || [];
+      
+      // Filter by region if not 'all'
+      if (selectedRegion !== 'all') {
+        instanceData = instanceData.filter(instance => instance.region === selectedRegion);
+      }
+      
+      setInstances(instanceData);
+    } catch (err) {
+      setError('Failed to fetch EC2 instances');
+      console.error('EC2 fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const filterInstances = () => {
-    if (!searchTerm) {
-      setFilteredInstances(instances);
-      return;
+    let filtered = instances;
+    
+    if (searchTerm) {
+      filtered = instances.filter(instance =>
+        instance.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        instance.instance_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        instance.instance_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        instance.state?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-
-    const filtered = instances.filter(instance =>
-      instance.instance_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      instance.instance_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      instance.state.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (instance.tags && Object.values(instance.tags).some(tag => 
-        tag.toLowerCase().includes(searchTerm.toLowerCase())
-      ))
-    );
+    
     setFilteredInstances(filtered);
   };
 
   const handleCreateInstance = async (e) => {
     e.preventDefault();
     try {
-      await ec2Service.createInstance(createForm);
-      toast.success('EC2 instance creation initiated');
+      setActionLoading(prev => ({ ...prev, create: true }));
+      setError(null);
+      
+      const response = await ec2Service.createInstance(createForm);
+      setSuccess('EC2 instance creation initiated successfully!');
       setShowCreateForm(false);
       setCreateForm({
-        instance_type: 't2.micro',
+        instance_type: 't3.micro',
         ami_id: 'ami-0c02fb55956c7d316',
         key_name: '',
-        security_groups: [],
-        tags: {},
+        security_groups: ['default'],
+        tags: { Name: '', Environment: 'development' },
         region: 'us-east-1'
       });
-      fetchInstances();
-    } catch (error) {
-      toast.error('Failed to create EC2 instance');
-      console.error('EC2 create error:', error);
+      
+      // Refresh instances list
+      setTimeout(() => fetchInstances(), 2000);
+    } catch (err) {
+      setError('Failed to create EC2 instance');
+      console.error('Create instance error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, create: false }));
     }
   };
 
-  const handleInstanceAction = async (instance, action) => {
+  const handleInstanceAction = async (instanceId, action) => {
     try {
-      switch (action) {
-        case 'start':
-          await ec2Service.startInstance(instance.instance_id, instance.region);
-          toast.success('Instance start initiated');
-          break;
-        case 'stop':
-          await ec2Service.stopInstance(instance.instance_id, instance.region);
-          toast.success('Instance stop initiated');
-          break;
-        case 'terminate':
-          if (window.confirm('Are you sure you want to terminate this instance?')) {
-            await ec2Service.terminateInstance(instance.instance_id, instance.region);
-            toast.success('Instance termination initiated');
-          }
-          break;
-        default:
-          break;
+      setActionLoading(prev => ({ ...prev, [instanceId]: true }));
+      setError(null);
+      
+      if (action === 'start') {
+        await ec2Service.startInstance(instanceId);
+        setSuccess(`Instance ${instanceId} start initiated`);
+      } else if (action === 'stop') {
+        await ec2Service.stopInstance(instanceId);
+        setSuccess(`Instance ${instanceId} stop initiated`);
+      } else if (action === 'terminate') {
+        if (window.confirm('Are you sure you want to terminate this instance? This action cannot be undone.')) {
+          await ec2Service.terminateInstance(instanceId);
+          setSuccess(`Instance ${instanceId} termination initiated`);
+        } else {
+          return;
+        }
       }
-      fetchInstances();
-    } catch (error) {
-      toast.error(`Failed to ${action} instance`);
-      console.error(`EC2 ${action} error:`, error);
+      
+      // Refresh instances list
+      setTimeout(() => fetchInstances(), 2000);
+    } catch (err) {
+      setError(`Failed to ${action} instance ${instanceId}`);
+      console.error(`${action} instance error:`, err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [instanceId]: false }));
     }
   };
 
-  const getInstanceActions = (instance) => {
-    const actions = [];
-    
-    if (instance.state === 'stopped') {
-      actions.push(
-        <button
-          key="start"
-          className="btn btn-success"
-          onClick={() => handleInstanceAction(instance, 'start')}
-        >
-          ▶️ Start
-        </button>
-      );
+  const getStatusColor = (state) => {
+    switch (state?.toLowerCase()) {
+      case 'running': return 'success';
+      case 'stopped': return 'error';
+      case 'pending': return 'warning';
+      case 'stopping': return 'warning';
+      case 'terminated': return 'error';
+      default: return 'default';
     }
+  };
+
+  const getInstanceStats = () => {
+    const total = instances.length;
+    const running = instances.filter(i => i.state === 'running').length;
+    const stopped = instances.filter(i => i.state === 'stopped').length;
+    const pending = instances.filter(i => i.state === 'pending').length;
     
-    if (instance.state === 'running') {
-      actions.push(
-        <button
-          key="stop"
-          className="btn btn-warning"
-          onClick={() => handleInstanceAction(instance, 'stop')}
-        >
-          ⏹️ Stop
-        </button>
-      );
-    }
-    
-    actions.push(
-      <button
-        key="terminate"
-        className="btn btn-danger"
-        onClick={() => handleInstanceAction(instance, 'terminate')}
-      >
-        🗑️ Terminate
-      </button>
+    return { total, running, stopped, pending };
+  };
+
+  const stats = getInstanceStats();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-60vh">
+        <div className="glass-card text-center">
+          <LoadingSpinner size="lg" />
+          <p className="text-white mt-4 text-lg">Loading EC2 instances...</p>
+        </div>
+      </div>
     );
-    
-    return actions;
-  };
-
-  if (loading && instances.length === 0) {
-    return <LoadingSpinner message="Loading EC2 instances..." />;
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">🖥️ EC2 Instances</h1>
-        <p className="page-description">Manage your EC2 virtual machines across all regions</p>
-        
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowCreateForm(!showCreateForm)}
-          >
-            {showCreateForm ? '❌ Cancel' : '➕ Create Instance'}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={fetchInstances}
-            disabled={loading}
-          >
-            🔄 Refresh
-          </button>
+    <div className="fade-in">
+      {/* Header */}
+      <div className="mb-8 text-center">
+        <h1 className="title">🖥️ EC2 Instances</h1>
+        <p className="subtitle">Manage your virtual machines in the cloud</p>
+      </div>
+
+      {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
+      {success && <SuccessAlert message={success} onClose={() => setSuccess(null)} />}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">📊</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Total</h3>
+          <div className="text-4xl font-bold text-white mb-3 text-shadow">{stats.total}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">✅</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Running</h3>
+          <div className="text-4xl font-bold text-green-400 mb-3 text-shadow">{stats.running}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">⏸️</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Stopped</h3>
+          <div className="text-4xl font-bold text-red-400 mb-3 text-shadow">{stats.stopped}</div>
+        </div>
+        <div className="glass-card-small text-center">
+          <div className="text-4xl mb-3">⏳</div>
+          <h3 className="text-white text-sm uppercase tracking-wide mb-3 font-semibold opacity-90">Pending</h3>
+          <div className="text-4xl font-bold text-yellow-400 mb-3 text-shadow">{stats.pending}</div>
         </div>
       </div>
 
-      {error && <ErrorAlert message={error} onDismiss={() => setError(null)} />}
-
-      <RegionSelector
-        regions={regions}
-        selectedRegion={selectedRegion}
-        onRegionChange={setSelectedRegion}
-        loading={loading}
-      />
-
-      <SearchFilter
-        value={searchTerm}
-        onChange={setSearchTerm}
-        placeholder="Search instances by ID, type, state, or tags..."
-      />
-
-      {!selectedRegion && instances.length > 0 && (
-        <div className="create-form" style={{ marginBottom: '1.5rem' }}>
-          <h3>📊 Instances by Region</h3>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '1rem',
-            textAlign: 'left'
-          }}>
-            {Object.entries(
-              instances.reduce((acc, instance) => {
-                const region = instance.region || 'Unknown';
-                acc[region] = (acc[region] || 0) + 1;
-                return acc;
-              }, {})
-            )
-              .sort(([,a], [,b]) => b - a)
-              .map(([region, count]) => (
-                <div 
-                  key={region}
-                  style={{
-                    background: 'white',
-                    padding: '1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #e1e5e9',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onClick={() => setSelectedRegion(region)}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = 'translateY(-2px)';
-                    e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = 'translateY(0)';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ fontWeight: '600', color: '#232f3e' }}>{region}</div>
-                  <div style={{ fontSize: '0.875rem', color: '#666' }}>{count} instances</div>
-                </div>
-              ))
-            }
+      {/* Controls */}
+      <div className="glass-card mb-8">
+        <div className="controls-row">
+          <div className="controls-inputs">
+            <RegionSelector
+              value={selectedRegion}
+              onChange={setSelectedRegion}
+              regions={['all', ...regions]}
+              className="flex-1"
+            />
+            <SearchFilter
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search instances..."
+              className="flex-1"
+            />
           </div>
-        </div>
-      )}
-
-      {showCreateForm && (
-        <div className="create-form">
-          <h3>🚀 Create New EC2 Instance</h3>
-          <form onSubmit={handleCreateInstance}>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Instance Type</label>
-                <select
-                  className="form-control"
-                  value={createForm.instance_type}
-                  onChange={(e) => setCreateForm({...createForm, instance_type: e.target.value})}
-                >
-                  <option value="t2.micro">t2.micro (1 vCPU, 1 GB RAM)</option>
-                  <option value="t2.small">t2.small (1 vCPU, 2 GB RAM)</option>
-                  <option value="t2.medium">t2.medium (2 vCPU, 4 GB RAM)</option>
-                  <option value="t3.micro">t3.micro (2 vCPU, 1 GB RAM)</option>
-                  <option value="t3.small">t3.small (2 vCPU, 2 GB RAM)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Region</label>
-                <select
-                  className="form-control"
-                  value={createForm.region}
-                  onChange={(e) => setCreateForm({...createForm, region: e.target.value})}
-                >
-                  {regions.map(region => (
-                    <option key={region} value={region}>{region}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>AMI ID</label>
-              <input
-                type="text"
-                className="form-control"
-                value={createForm.ami_id}
-                onChange={(e) => setCreateForm({...createForm, ami_id: e.target.value})}
-                placeholder="ami-0c02fb55956c7d316"
-              />
-              <small>Default: Amazon Linux 2</small>
-            </div>
-            <div className="form-group">
-              <label>Key Pair Name (Optional)</label>
-              <input
-                type="text"
-                className="form-control"
-                value={createForm.key_name}
-                onChange={(e) => setCreateForm({...createForm, key_name: e.target.value})}
-                placeholder="my-key-pair"
-              />
-            </div>
-            <button type="submit" className="btn btn-success">
-              🚀 Create Instance
-            </button>
-          </form>
-        </div>
-      )}
-
-      {loading && <LoadingSpinner message="Fetching instances..." />}
-
-      <div className="resource-grid">
-        {filteredInstances.map((instance) => (
-          <ResourceCard
-            key={instance.instance_id}
-            title={instance.instance_id}
-            status={instance.state}
-            region={selectedRegion ? null : instance.region} // Only show region tag when viewing all regions
-            actions={getInstanceActions(instance)}
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="btn btn-primary whitespace-nowrap"
           >
-            <p><strong>Type:</strong> {instance.instance_type}</p>
-            {!selectedRegion && instance.region && (
-              <p><strong>Region:</strong> 
-                <span className="region-badge" style={{
-                  background: '#e3f2fd',
-                  color: '#1976d2',
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '12px',
-                  fontSize: '0.75rem',
-                  fontWeight: '500',
-                  marginLeft: '0.5rem'
-                }}>
-                  {instance.region}
-                </span>
-              </p>
-            )}
-            {instance.public_ip && (
-              <p><strong>Public IP:</strong> {instance.public_ip}</p>
-            )}
-            {instance.private_ip && (
-              <p><strong>Private IP:</strong> {instance.private_ip}</p>
-            )}
-            {instance.launch_time && (
-              <p><strong>Launch Time:</strong> {new Date(instance.launch_time).toLocaleString()}</p>
-            )}
-            {instance.tags && Object.keys(instance.tags).length > 0 && (
-              <div>
-                <strong>Tags:</strong>
-                <div style={{ marginTop: '0.5rem' }}>
-                  {Object.entries(instance.tags).map(([key, value]) => (
-                    <span
-                      key={key}
-                      style={{
-                        display: 'inline-block',
-                        background: '#e9ecef',
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: '4px',
-                        fontSize: '0.75rem',
-                        margin: '0.25rem 0.25rem 0 0'
-                      }}
-                    >
-                      {key}: {value}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </ResourceCard>
-        ))}
+            🚀 Launch Instance
+          </button>
+        </div>
       </div>
 
-      {!loading && filteredInstances.length === 0 && (
-        <div className="text-center" style={{ padding: '3rem' }}>
-          <h3>No EC2 instances found</h3>
-          <p>
-            {searchTerm
-              ? `No instances match "${searchTerm}"`
-              : selectedRegion
-              ? `No instances in ${selectedRegion}`
-              : 'No instances in any region'
-            }
-          </p>
-        </div>
-      )}
+      {/* Instances Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredInstances.length > 0 ? (
+          filteredInstances.map((instance) => (
+            <div key={instance.instance_id} className="glass-card-small">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-white text-shadow">
+                  {instance.name || instance.instance_id}
+                </h3>
+                <Tag variant={getStatusColor(instance.state)}>
+                  {instance.state}
+                </Tag>
+              </div>
+              
+              <div className="space-y-3 mb-6">
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Instance Type:</span>
+                  <span className="font-medium text-white">{instance.instance_type}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Region:</span>
+                  <span className="font-medium text-white">{instance.region}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white opacity-80">Launch Time:</span>
+                  <span className="font-medium text-white text-sm">
+                    {instance.launch_time ? new Date(instance.launch_time).toLocaleDateString() : 'N/A'}
+                  </span>
+                </div>
+                {instance.public_ip && (
+                  <div className="flex justify-between">
+                    <span className="text-white opacity-80">Public IP:</span>
+                    <span className="font-medium text-white font-mono text-sm">{instance.public_ip}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                {instance.state === 'stopped' && (
+                  <button
+                    onClick={() => handleInstanceAction(instance.instance_id, 'start')}
+                    disabled={actionLoading[instance.instance_id]}
+                    className="btn btn-success flex-1 text-sm"
+                  >
+                    {actionLoading[instance.instance_id] ? <LoadingSpinner size="sm" /> : '▶️ Start'}
+                  </button>
+                )}
+                {instance.state === 'running' && (
+                  <button
+                    onClick={() => handleInstanceAction(instance.instance_id, 'stop')}
+                    disabled={actionLoading[instance.instance_id]}
+                    className="btn btn-secondary flex-1 text-sm"
+                  >
+                    {actionLoading[instance.instance_id] ? <LoadingSpinner size="sm" /> : '⏸️ Stop'}
+                  </button>
+                )}
+                <button
+                  onClick={() => handleInstanceAction(instance.instance_id, 'terminate')}
+                  disabled={actionLoading[instance.instance_id]}
+                  className="btn btn-danger flex-1 text-sm"
+                >
+                  {actionLoading[instance.instance_id] ? <LoadingSpinner size="sm" /> : '🗑️ Terminate'}
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="col-span-full">
+            <EmptyState
+              title="No EC2 Instances Found"
+              description={searchTerm ? 
+                `No instances match your search "${searchTerm}". Try adjusting your search terms.` :
+                "You don't have any EC2 instances yet. Launch your first instance to get started!"
+              }
+              icon="🖥️"
+              action={
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="btn btn-primary"
+                >
+                  🚀 Launch Your First Instance
+                </button>
+              }
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Create Instance Modal */}
+      <Modal
+        isOpen={showCreateForm}
+        onClose={() => setShowCreateForm(false)}
+        title="🚀 Launch New EC2 Instance"
+      >
+        <form onSubmit={handleCreateInstance} className="space-y-6">
+          <FormField label="Instance Name">
+            <input
+              type="text"
+              className="input"
+              placeholder="Enter instance name"
+              value={createForm.tags.Name}
+              onChange={(e) => setCreateForm(prev => ({
+                ...prev,
+                tags: { ...prev.tags, Name: e.target.value }
+              }))}
+              required
+            />
+          </FormField>
+
+          <FormField label="Instance Type">
+            <select
+              className="select"
+              value={createForm.instance_type}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, instance_type: e.target.value }))}
+            >
+              <option value="t3.nano">t3.nano (0.5 GB RAM)</option>
+              <option value="t3.micro">t3.micro (1 GB RAM)</option>
+              <option value="t3.small">t3.small (2 GB RAM)</option>
+              <option value="t3.medium">t3.medium (4 GB RAM)</option>
+              <option value="t3.large">t3.large (8 GB RAM)</option>
+            </select>
+          </FormField>
+
+          <FormField label="AMI ID">
+            <input
+              type="text"
+              className="input"
+              placeholder="ami-0c02fb55956c7d316"
+              value={createForm.ami_id}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, ami_id: e.target.value }))}
+              required
+            />
+          </FormField>
+
+          <FormField label="Key Pair Name">
+            <input
+              type="text"
+              className="input"
+              placeholder="Enter your key pair name"
+              value={createForm.key_name}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, key_name: e.target.value }))}
+            />
+          </FormField>
+
+          <FormField label="Region">
+            <select
+              className="select"
+              value={createForm.region}
+              onChange={(e) => setCreateForm(prev => ({ ...prev, region: e.target.value }))}
+            >
+              {regions.map(region => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Environment">
+            <select
+              className="select"
+              value={createForm.tags.Environment}
+              onChange={(e) => setCreateForm(prev => ({
+                ...prev,
+                tags: { ...prev.tags, Environment: e.target.value }
+              }))}
+            >
+              <option value="development">Development</option>
+              <option value="staging">Staging</option>
+              <option value="production">Production</option>
+            </select>
+          </FormField>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowCreateForm(false)}
+              className="btn btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={actionLoading.create}
+              className="btn btn-primary flex-1"
+            >
+              {actionLoading.create ? <LoadingSpinner size="sm" /> : '🚀 Launch Instance'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

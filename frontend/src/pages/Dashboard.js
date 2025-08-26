@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ec2Service, s3Service, rdsService, lambdaService } from '../services/api';
-import { StatsCard, LoadingSpinner, ErrorAlert } from '../components/UIComponents';
+import { StatsCard, LoadingSpinner, ErrorAlert, EmptyState, ProgressBar } from '../components/UIComponents';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -11,6 +11,7 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -91,150 +92,219 @@ const Dashboard = () => {
         lambda: lambdaStats
       });
     } catch (err) {
-      setError('Failed to fetch dashboard data. Please check your AWS credentials and try again.');
-      console.error('Dashboard error:', err);
+      setError('Failed to fetch dashboard statistics');
+      console.error('Dashboard stats error:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchStats();
   };
 
   const getTotalResources = () => {
     return stats.ec2.total + stats.s3.total + stats.rds.total + stats.lambda.total;
   };
 
-  const getTopRegions = () => {
+  const getAllRegions = () => {
     const regionCounts = {};
     
-    // Combine all region data
     Object.entries(stats.ec2.regions).forEach(([region, count]) => {
       regionCounts[region] = (regionCounts[region] || 0) + count;
     });
+    
     Object.entries(stats.s3.regions).forEach(([region, count]) => {
       regionCounts[region] = (regionCounts[region] || 0) + count;
     });
+    
     Object.entries(stats.rds.regions).forEach(([region, count]) => {
       regionCounts[region] = (regionCounts[region] || 0) + count;
     });
+    
     Object.entries(stats.lambda.regions).forEach(([region, count]) => {
       regionCounts[region] = (regionCounts[region] || 0) + count;
     });
     
     return Object.entries(regionCounts)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 5);
   };
 
+  const getHealthScore = () => {
+    const totalServices = stats.ec2.total + stats.rds.total;
+    const healthyServices = stats.ec2.running + stats.rds.available;
+    return totalServices > 0 ? Math.round((healthyServices / totalServices) * 100) : 100;
+  };
+
   if (loading) {
-    return <LoadingSpinner message="Loading dashboard data..." />;
+    return (
+      <div className="flex items-center justify-center min-h-60vh">
+        <div className="glass-card text-center">
+          <LoadingSpinner size="lg" />
+          <p className="text-white mt-4">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
-
-  if (error) {
-    return <ErrorAlert message={error} onDismiss={() => setError(null)} />;
-  }
-
-  const topRegions = getTopRegions();
 
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">🏠 AWS Resource Dashboard</h1>
-        <p className="page-description">
-          Overview of your AWS resources across all regions and services
-        </p>
+    <div className="fade-in">
+      {/* Header */}
+      <div className="mb-8 text-center">
+        <h1 className="title">🚀 AWS Dashboard</h1>
+        <p className="subtitle">Monitor and manage your AWS resources across all regions</p>
         <button
-          className="btn btn-primary"
-          onClick={fetchStats}
-          disabled={loading}
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="btn btn-secondary mt-4"
         >
-          🔄 Refresh Data
+          {refreshing ? <LoadingSpinner size="sm" /> : '🔄'}
+          {refreshing ? 'Refreshing...' : 'Refresh Data'}
         </button>
       </div>
 
-      <div className="dashboard-stats">
+      {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
+
+      {/* Main Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
-          icon="🖥️"
           title="EC2 Instances"
           value={stats.ec2.total}
-          subtitle={`${stats.ec2.running} running, ${stats.ec2.stopped} stopped`}
-          color="blue"
+          icon="🖥️"
+          trend={stats.ec2.running > 0 ? { positive: true, value: `${stats.ec2.running} running` } : null}
         />
         <StatsCard
-          icon="🪣"
           title="S3 Buckets"
           value={stats.s3.total}
-          subtitle="Storage buckets"
-          color="green"
+          icon="🪣"
+          trend={{ positive: true, value: "Storage ready" }}
         />
         <StatsCard
-          icon="🗄️"
-          title="RDS Instances"
+          title="RDS Databases"
           value={stats.rds.total}
-          subtitle={`${stats.rds.available} available, ${stats.rds.stopped} stopped`}
-          color="orange"
+          icon="🗄️"
+          trend={stats.rds.available > 0 ? { positive: true, value: `${stats.rds.available} available` } : null}
         />
         <StatsCard
-          icon="⚡"
           title="Lambda Functions"
           value={stats.lambda.total}
-          subtitle="Serverless functions"
-          color="purple"
+          icon="⚡"
+          trend={{ positive: true, value: "Serverless ready" }}
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
-        <div className="create-form">
-          <h3>📊 Quick Stats</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', textAlign: 'left' }}>
-            <div>
-              <p><strong>Total Resources:</strong> {getTotalResources()}</p>
-              <p><strong>Active Regions:</strong> {topRegions.length}</p>
-            </div>
-            <div>
-              <p><strong>Running Services:</strong> {stats.ec2.running + stats.rds.available}</p>
-              <p><strong>Serverless Functions:</strong> {stats.lambda.total}</p>
+      {/* Overview Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Health Overview */}
+        <div className="glass-card">
+          <h3 className="section-title mb-4">💚 System Health</h3>
+          <div className="text-center">
+            <div className="text-4xl font-bold text-white mb-2">{getHealthScore()}%</div>
+            <ProgressBar progress={getHealthScore()} className="mb-4" />
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="text-center">
+                <div className="text-green-400 font-semibold">{stats.ec2.running + stats.rds.available}</div>
+                <div className="text-white opacity-70">Healthy</div>
+              </div>
+              <div className="text-center">
+                <div className="text-red-400 font-semibold">{stats.ec2.stopped + stats.rds.stopped}</div>
+                <div className="text-white opacity-70">Stopped</div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="create-form">
-          <h3>🌍 Top Regions</h3>
-          {topRegions.length > 0 ? (
-            <div style={{ textAlign: 'left' }}>
-              {topRegions.map(([region, count]) => (
-                <div key={region} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span>{region}</span>
-                  <span style={{ fontWeight: 'bold' }}>{count} resources</span>
+        {/* Quick Stats */}
+        <div className="glass-card">
+          <h3 className="section-title mb-4">📊 Quick Overview</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between">
+              <span className="text-white opacity-80">Total Resources</span>
+              <span className="font-bold text-white">{getTotalResources()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white opacity-80">Active Regions</span>
+              <span className="font-bold text-white">{getAllRegions().length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white opacity-80">Running Services</span>
+              <span className="font-bold text-white">{stats.ec2.running + stats.rds.available}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white opacity-80">Serverless Functions</span>
+              <span className="font-bold text-white">{stats.lambda.total}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Top Regions */}
+        <div className="glass-card">
+          <h3 className="section-title mb-4">🌍 Top Regions</h3>
+          {getAllRegions().length > 0 ? (
+            <div className="space-y-3">
+              {getAllRegions().map(([region, count], index) => (
+                <div key={region} className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white opacity-60">#{index + 1}</span>
+                    <span className="text-white">{region}</span>
+                  </div>
+                  <span className="font-bold text-white">{count}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p style={{ textAlign: 'center', color: '#666' }}>No regional data available</p>
+            <EmptyState
+              title="No Data"
+              description="No regional data available"
+              icon="🌍"
+            />
           )}
         </div>
       </div>
 
-      <div className="create-form">
-        <h3>🚀 Quick Actions</h3>
-        <p style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
-          Use the navigation menu above to manage specific AWS services:
+      {/* Quick Actions */}
+      <div className="glass-card">
+        <h3 className="section-title mb-6">🚀 Quick Actions</h3>
+        <p className="text-white opacity-80 mb-6 text-center">
+          Click on any service below to manage your AWS resources
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-          <div style={{ textAlign: 'center', padding: '1rem', background: 'white', borderRadius: '8px' }}>
-            <h4>🖥️ EC2 Instances</h4>
-            <p>Create and manage virtual machines</p>
-          </div>
-          <div style={{ textAlign: 'center', padding: '1rem', background: 'white', borderRadius: '8px' }}>
-            <h4>🪣 S3 Buckets</h4>
-            <p>Store and manage files in the cloud</p>
-          </div>
-          <div style={{ textAlign: 'center', padding: '1rem', background: 'white', borderRadius: '8px' }}>
-            <h4>🗄️ RDS Databases</h4>
-            <p>Deploy and manage databases</p>
-          </div>
-          <div style={{ textAlign: 'center', padding: '1rem', background: 'white', borderRadius: '8px' }}>
-            <h4>⚡ Lambda Functions</h4>
-            <p>Run serverless code</p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <a href="/ec2" className="glass-card-small text-center hover:scale-105 transition-transform no-underline">
+            <div className="text-4xl mb-3">🖥️</div>
+            <h4 className="text-white font-semibold mb-2">EC2 Instances</h4>
+            <p className="text-white opacity-70 text-sm">Create and manage virtual machines</p>
+          </a>
+          <a href="/s3" className="glass-card-small text-center hover:scale-105 transition-transform no-underline">
+            <div className="text-4xl mb-3">🪣</div>
+            <h4 className="text-white font-semibold mb-2">S3 Buckets</h4>
+            <p className="text-white opacity-70 text-sm">Store and manage files in the cloud</p>
+          </a>
+          <a href="/rds" className="glass-card-small text-center hover:scale-105 transition-transform no-underline">
+            <div className="text-4xl mb-3">🗄️</div>
+            <h4 className="text-white font-semibold mb-2">RDS Databases</h4>
+            <p className="text-white opacity-70 text-sm">Deploy and manage databases</p>
+          </a>
+          <a href="/lambda" className="glass-card-small text-center hover:scale-105 transition-transform no-underline">
+            <div className="text-4xl mb-3">⚡</div>
+            <h4 className="text-white font-semibold mb-2">Lambda Functions</h4>
+            <p className="text-white opacity-70 text-sm">Run serverless code</p>
+          </a>
+        </div>
+      </div>
+
+      {/* GitHub Integration Promo */}
+      <div className="glass-card mt-6">
+        <div className="text-center">
+          <h3 className="section-title mb-4">🐙 New: GitHub Integration</h3>
+          <p className="text-white opacity-80 mb-6">
+            Deploy your GitHub repositories directly to AWS services with just a few clicks!
+          </p>
+          <a href="/github" className="btn btn-primary">
+            🚀 Try GitHub Deploy
+          </a>
         </div>
       </div>
     </div>
