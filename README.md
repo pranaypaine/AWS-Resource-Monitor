@@ -1,223 +1,255 @@
-# AWS Resource Monitor
+# AWS Resource Monitor & Deployment Platform
 
-A comprehensive web application for monitoring and managing AWS resources with a Python FastAPI backend and React frontend.
+A comprehensive web application for monitoring AWS resources and deploying GitHub repositories to AWS services. Built with Python FastAPI backend and React frontend.
 
-## Features
+## ✨ Features
 
-### Backend (FastAPI)
-- **EC2 Management**: List, create, start, stop, and terminate EC2 instances
-- **S3 Management**: List, create, and delete S3 buckets
-- **RDS Management**: List, create, start, stop, and delete RDS instances  
-- **Lambda Management**: List, create, delete, and invoke Lambda functions
-- **Secure AWS Integration**: Uses boto3 with configurable AWS credentials
-- **RESTful API**: Well-documented API endpoints with automatic OpenAPI documentation
+### 🔍 **AWS Resource Monitoring**
+- **Multi-Region Support**: Monitor resources across all AWS regions
+- **Real-time Data**: Live status and metrics for your AWS resources
+- **Resource Management**: View, create, and manage AWS resources from the UI
+- **Smart Filtering**: Search and filter resources by region, status, and tags
 
-### Frontend (React)
-- **Dashboard**: Overview of all AWS resources with statistics
-- **Resource Management**: Dedicated pages for each AWS service
-- **Real-time Updates**: Automatic refresh of resource states
-- **Responsive Design**: Mobile-friendly interface
-- **Interactive Forms**: Easy resource creation with validation
-- **Toast Notifications**: User feedback for all operations
+### 🚀 **GitHub Integration & Deployment**
+- **Repository Connection**: Connect your GitHub repositories with personal access tokens
+- **Multi-Service Deployment**: Deploy to Lambda, S3 Static Sites, EC2, and ECS
+- **Automated Deployments**: Set up webhooks for automatic deployments on push
+- **Environment Management**: Support for dev, staging, and production environments
+- **Deployment Monitoring**: Real-time logs and status tracking
 
-## Prerequisites
+### 📊 **Enhanced UI/UX**
+- **Intuitive Interface**: Clean, modern design with responsive layout
+- **Interactive Components**: Advanced search, filtering, and sorting capabilities
+- **Real-time Updates**: Live status updates and notifications
+- **Region Selector**: Easy switching between AWS regions
 
-- Python 3.8+
-- Node.js 16+
-- AWS Account with access keys
-- AWS CLI configured (optional)
+## 🏗️ **Supported AWS Services**
 
-## Setup Instructions
+### Resource Monitoring
+- **EC2**: Instances, AMIs, Security Groups, Key Pairs
+- **S3**: Buckets, Objects, Bucket policies
+- **RDS**: Database instances, Snapshots, Parameter groups
+- **Lambda**: Functions, Layers, Event source mappings
 
-### 1. Clone and Setup Backend
+### Deployment Targets
+- **AWS Lambda**: Serverless functions (Python, Node.js, Java, .NET, Go)
+- **S3 Static Websites**: Static sites with automatic hosting setup
+- **EC2 Instances**: Application deployment (coming soon)
+- **ECS Containers**: Containerized applications (coming soon)
 
+## 🛠️ **Tech Stack**
+
+### Backend
+- **FastAPI**: Modern Python web framework
+- **Boto3**: Official AWS SDK for Python
+- **Pydantic**: Data validation and serialization
+- **Uvicorn**: ASGI server
+
+### Frontend
+- **React 18**: Modern JavaScript library
+- **React Router**: Client-side routing
+- **Axios**: HTTP client for API calls
+- **React Toastify**: Elegant notifications
+- **Tailwind CSS**: Utility-first CSS framework
+
+## 📋 **Prerequisites**
+
+- **Python 3.9+**
+- **Node.js 16+**
+- **AWS Account** with configured credentials
+- **GitHub Account** for repository integration
+
+## 🚀 **Quick Start**
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd aws-resource-deploy
+```
+
+### 2. Backend Setup
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure AWS credentials
-cp .env.example .env
-# Edit .env file with your AWS credentials
 ```
 
-### 2. Configure AWS Credentials
-
-Edit `backend/.env` file:
-
-```env
-AWS_ACCESS_KEY_ID=your_aws_access_key_here
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
-AWS_DEFAULT_REGION=us-east-1
-DEBUG=True
-```
-
-### 3. Setup Frontend
-
+### 3. Configure AWS Credentials
 ```bash
-cd frontend
+# Option 1: AWS CLI
+aws configure
 
-# Install dependencies
+# Option 2: Environment Variables
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_DEFAULT_REGION=us-east-1
+
+# Option 3: Create .env file
+echo "AWS_ACCESS_KEY_ID=your_access_key" > .env
+echo "AWS_SECRET_ACCESS_KEY=your_secret_key" >> .env
+echo "AWS_DEFAULT_REGION=us-east-1" >> .env
+```
+
+### 4. Start Backend Server
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 5. Frontend Setup
+```bash
+cd ../frontend
 npm install
-```
-
-## Running the Application
-
-### Start Backend Server
-
-```bash
-cd backend
-source venv/bin/activate
-uvicorn main:app --reload --port 8000
-```
-
-The API will be available at `http://localhost:8000`
-- API Documentation: `http://localhost:8000/docs`
-- Health Check: `http://localhost:8000/health`
-
-### Start Frontend Server
-
-```bash
-cd frontend
 npm start
 ```
 
-The web application will be available at `http://localhost:3000`
+### 6. Access the Application
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
 
-## API Endpoints
+## 🔧 **Configuration**
 
-### EC2 Endpoints
-- `GET /api/ec2/instances` - List all EC2 instances
-- `POST /api/ec2/instances` - Create new EC2 instance
-- `DELETE /api/ec2/instances/{instance_id}` - Terminate instance
-- `POST /api/ec2/instances/{instance_id}/start` - Start instance
-- `POST /api/ec2/instances/{instance_id}/stop` - Stop instance
+### AWS Permissions
+Ensure your AWS credentials have the following permissions:
+- **EC2**: `ec2:Describe*`, `ec2:RunInstances`, `ec2:TerminateInstances`
+- **S3**: `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:CreateBucket`
+- **RDS**: `rds:Describe*`, `rds:CreateDBInstance`
+- **Lambda**: `lambda:*`, `iam:PassRole`
 
-### S3 Endpoints
-- `GET /api/s3/buckets` - List all S3 buckets
-- `POST /api/s3/buckets` - Create new S3 bucket
-- `DELETE /api/s3/buckets/{bucket_name}` - Delete bucket
-- `GET /api/s3/buckets/{bucket_name}/objects` - List bucket objects
+### GitHub Integration
+1. Generate a GitHub Personal Access Token:
+   - Go to GitHub Settings → Developer settings → Personal access tokens
+   - Create token with `repo` and `user` scopes
+2. Use the token in the GitHub Deploy page
 
-### RDS Endpoints
-- `GET /api/rds/instances` - List all RDS instances
-- `POST /api/rds/instances` - Create new RDS instance
-- `DELETE /api/rds/instances/{db_instance_id}` - Delete instance
-- `POST /api/rds/instances/{db_instance_id}/start` - Start instance
-- `POST /api/rds/instances/{db_instance_id}/stop` - Stop instance
+## 📖 **Usage**
 
-### Lambda Endpoints
-- `GET /api/lambda/functions` - List all Lambda functions
-- `POST /api/lambda/functions` - Create new Lambda function
-- `DELETE /api/lambda/functions/{function_name}` - Delete function
-- `POST /api/lambda/functions/{function_name}/invoke` - Invoke function
-- `GET /api/lambda/functions/{function_name}` - Get function details
+### Monitoring AWS Resources
+1. **Dashboard**: Overview of all resources across regions
+2. **Service Pages**: Detailed views for EC2, S3, RDS, Lambda
+3. **Region Filtering**: Switch between AWS regions
+4. **Resource Actions**: Create, delete, and manage resources
 
-## Architecture
+### Deploying from GitHub
+1. **Connect Repository**: Enter GitHub token and select repository
+2. **Configure Deployment**: Choose AWS service, environment, and region
+3. **Deploy**: Monitor deployment progress and logs
+4. **Automated Deployments**: Set up webhooks for automatic deployments
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  React Frontend │    │ FastAPI Backend │    │   AWS Services  │
-│                 │    │                 │    │                 │
-│  - Dashboard    │◄──►│  - REST API     │◄──►│  - EC2          │
-│  - EC2 Page     │    │  - AWS Client   │    │  - S3           │
-│  - S3 Page      │    │  - Services     │    │  - RDS          │
-│  - RDS Page     │    │  - Models       │    │  - Lambda       │
-│  - Lambda Page  │    │  - Routers      │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+### Example Deployments
 
-## Security Considerations
-
-1. **AWS Credentials**: Store AWS credentials securely using environment variables
-2. **CORS**: Configure CORS properly for production deployment
-3. **Input Validation**: All API inputs are validated using Pydantic models
-4. **Error Handling**: Comprehensive error handling with proper status codes
-5. **Rate Limiting**: Consider implementing rate limiting for production use
-
-## Development
-
-### Backend Structure
-```
-backend/
-├── main.py                 # FastAPI application entry point
-├── requirements.txt        # Python dependencies
-├── .env.example           # Environment variables template
-├── app/
-│   ├── __init__.py
-│   ├── aws_client.py      # AWS client configuration
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── aws_models.py  # Pydantic models
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── ec2_service.py
-│   │   ├── s3_service.py
-│   │   ├── rds_service.py
-│   │   └── lambda_service.py
-│   └── routers/
-│       ├── __init__.py
-│       ├── ec2.py
-│       ├── s3.py
-│       ├── rds.py
-│       └── lambda_func.py
+#### Lambda Function
+```python
+# lambda_function.py
+def handler(event, context):
+    return {
+        'statusCode': 200,
+        'body': 'Hello from Lambda!'
+    }
 ```
 
-### Frontend Structure
-```
-frontend/
-├── package.json           # npm dependencies
-├── public/
-│   └── index.html
-└── src/
-    ├── index.js          # React entry point
-    ├── App.js            # Main application component
-    ├── App.css           # Global styles
-    ├── services/
-    │   └── api.js        # API service functions
-    └── pages/
-        ├── Dashboard.js
-        ├── EC2Page.js
-        ├── S3Page.js
-        ├── RDSPage.js
-        └── LambdaPage.js
+#### Static Website
+```html
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head><title>My Site</title></head>
+<body><h1>Hello World!</h1></body>
+</html>
 ```
 
-## Troubleshooting
+## 🔧 **Development**
 
-### Common Issues
+### Project Structure
+```
+aws-resource-deploy/
+├── backend/
+│   ├── app/
+│   │   ├── models/          # Pydantic models
+│   │   ├── routers/         # API route handlers
+│   │   ├── services/        # Business logic
+│   │   └── aws_client.py    # AWS client management
+│   ├── main.py              # FastAPI application
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # Reusable UI components
+│   │   ├── pages/           # Page components
+│   │   ├── services/        # API service layer
+│   │   └── App.js          # Main application
+│   └── package.json
+└── README.md
+```
 
-1. **AWS Credentials Error**: Ensure your AWS credentials are correctly configured in the `.env` file
-2. **CORS Error**: Check that the backend is running on port 8000 and frontend on port 3000
-3. **Module Import Error**: Ensure all Python dependencies are installed and virtual environment is activated
-4. **Resource Creation Fails**: Check AWS permissions and account limits
+### API Endpoints
+- **GET /api/ec2/instances**: List EC2 instances
+- **GET /api/s3/buckets**: List S3 buckets
+- **POST /api/github/repositories**: Connect GitHub repository
+- **POST /api/github/deploy**: Create deployment
+- **GET /api/github/deployments**: List deployments
 
-### Logs
+### Adding New Features
+1. **Backend**: Add new router in `app/routers/`
+2. **Models**: Define data models in `app/models/`
+3. **Services**: Implement business logic in `app/services/`
+4. **Frontend**: Create components in `src/components/` or `src/pages/`
 
-- Backend logs: Check the terminal where you started the FastAPI server
-- Frontend logs: Check the browser developer console
-- AWS API errors: Check the response details in the network tab
+## 🔐 **Security**
 
-## Contributing
+### Best Practices
+- **AWS Credentials**: Never commit credentials to version control
+- **GitHub Tokens**: Store securely and rotate regularly
+- **IAM Roles**: Use least-privilege principles
+- **Webhook Secrets**: Always use webhook secrets for automation
+
+### Production Deployment
+- Use environment variables for sensitive data
+- Set up proper IAM roles for Lambda functions
+- Enable CloudTrail for audit logging
+- Use HTTPS for all communications
+
+## 📚 **Documentation**
+
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)**: Detailed guide for GitHub integration and AWS deployments
+- **[API Documentation](http://localhost:8000/docs)**: Interactive API documentation
+- **AWS Documentation**: [AWS SDK for Python](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
+
+## 🤝 **Contributing**
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+2. Create a feature branch: `git checkout -b feature/new-feature`
+3. Make your changes and add tests
+4. Commit your changes: `git commit -am 'Add new feature'`
+5. Push to the branch: `git push origin feature/new-feature`
+6. Submit a pull request
 
-## License
+## 📝 **License**
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
+## 🆘 **Support**
 
-For issues and questions:
-1. Check the troubleshooting section
-2. Review AWS service documentation
-3. Check the API documentation at `http://localhost:8000/docs`
+- **Issues**: Report bugs and request features on GitHub Issues
+- **Discussions**: Ask questions in GitHub Discussions
+- **Documentation**: Check the [Deployment Guide](DEPLOYMENT_GUIDE.md) for detailed instructions
+
+## 🗺️ **Roadmap**
+
+### Current Features ✅
+- ✅ Multi-region AWS resource monitoring
+- ✅ GitHub repository integration
+- ✅ Lambda and S3 static deployments
+- ✅ Real-time deployment monitoring
+- ✅ Enhanced UI with search and filtering
+
+### Upcoming Features 🚧
+- 🚧 EC2 and ECS deployment support
+- 🚧 GitLab and Bitbucket integration
+- 🚧 CI/CD pipeline templates
+- 🚧 Cost monitoring and optimization
+- 🚧 Multi-cloud support (Azure, GCP)
+
+---
+
+**Built with ❤️ for the AWS and DevOps community**
