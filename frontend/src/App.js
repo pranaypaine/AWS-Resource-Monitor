@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
@@ -10,6 +10,7 @@ import EC2Page from './pages/EC2Page';
 import S3Page from './pages/S3Page';
 import RDSPage from './pages/RDSPage';
 import LambdaPage from './pages/LambdaPage';
+import GitHubPage from './pages/GitHubPage';
 
 function App() {
   return (
@@ -18,14 +19,15 @@ function App() {
         <header className="App-header">
           <nav className="navbar">
             <div className="nav-brand">
-              <h1>AWS Resource Monitor</h1>
+              <h1>☁️ AWS Resource Monitor</h1>
             </div>
             <ul className="nav-links">
-              <li><Link to="/">Dashboard</Link></li>
-              <li><Link to="/ec2">EC2</Link></li>
-              <li><Link to="/s3">S3</Link></li>
-              <li><Link to="/rds">RDS</Link></li>
-              <li><Link to="/lambda">Lambda</Link></li>
+              <li><NavLink to="/" end className={({isActive}) => isActive ? 'active' : ''}>🏠 Dashboard</NavLink></li>
+              <li><NavLink to="/ec2" className={({isActive}) => isActive ? 'active' : ''}>🖥️ EC2</NavLink></li>
+              <li><NavLink to="/s3" className={({isActive}) => isActive ? 'active' : ''}>🪣 S3</NavLink></li>
+              <li><NavLink to="/rds" className={({isActive}) => isActive ? 'active' : ''}>🗄️ RDS</NavLink></li>
+              <li><NavLink to="/lambda" className={({isActive}) => isActive ? 'active' : ''}>⚡ Lambda</NavLink></li>
+              <li><NavLink to="/github" className={({isActive}) => isActive ? 'active' : ''}>🐙 GitHub</NavLink></li>
             </ul>
           </nav>
         </header>
@@ -37,6 +39,7 @@ function App() {
             <Route path="/s3" element={<S3Page />} />
             <Route path="/rds" element={<RDSPage />} />
             <Route path="/lambda" element={<LambdaPage />} />
+            <Route path="/github" element={<GitHubPage />} />
           </Routes>
         </main>
 
